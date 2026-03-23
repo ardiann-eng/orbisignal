@@ -8,6 +8,7 @@ export interface PatternResult {
   pattern: string
   confidence: number // 0-100
   bias: PatternBias
+  logic?: string
 }
 
 // CCXT OHLCV format: [timestamp, open, high, low, close, volume]
@@ -547,3 +548,85 @@ export function pickBestPattern(patterns: PatternResult[]): PatternResult | null
   return patterns.slice().sort((a, b) => b.confidence - a.confidence)[0]
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F) PATTERN QUALITY TIERS & BONUS CALCULATOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Tier-based scoring system for detected patterns.
+ * HIGH quality patterns have strong directional conviction.
+ * LOW quality patterns are minor confirmations or ambiguous.
+ */
+const PATTERN_WEIGHTS: Record<string, number> = {
+  // ── HIGH QUALITY (+8 to +10) ─────────────────────────────────
+  'Bullish Engulfing':          10,
+  'Bearish Engulfing':          10,
+  'Morning Star':               10,
+  'Evening Star':               10,
+  'Three White Soldiers':        9,
+  'Three Black Crows':           9,
+  'Bullish Three Line Strike':   9,
+  'Bearish Three Line Strike':   9,
+  'Hammer':                      8,
+  'Shooting Star':               8,
+  'Gartley':                     8,
+  'Bat':                         8,
+  'Butterfly':                   8,
+  'Crab':                        8,
+  'Cypher':                      8,
+  'Shark':                       8,
+
+  // ── LOW QUALITY (+2 to +5) ───────────────────────────────────
+  'Piercing Line':               5,
+  'Dark Cloud Cover':            5,
+  'Ascending Triangle':          5,
+  'Descending Triangle':         5,
+  'Rising Wedge':                5,
+  'Falling Wedge':               5,
+  'Inverted Hammer':             4,
+  'Hanging Man':                 4,
+  'Ascending Channel':           3,
+  'Descending Channel':          3,
+  'Bullish Harami':              3,
+  'Bearish Harami':              3,
+  'Bull Pennant':                3,
+  'Bear Pennant':                3,
+  'Symmetrical Triangle':        2,
+  'Broadening Triangle':         2,
+  'Ranging Channel':             2,
+  'Doji':                        2,
+}
+
+const OPPOSING_PENALTY = -3
+
+/**
+ * Returns the scoring bonus for a given pattern relative to the technical direction.
+ * - Same direction (HIGH): +8 to +10
+ * - Same direction (LOW):  +2 to +5
+ * - NEUTRAL pattern (Doji, etc): +2 (partial credit)
+ * - Opposing direction: -3 (penalty)
+ * - Unknown pattern: 0 (safe fallback)
+ */
+export function getPatternBonus(
+  pattern: PatternResult,
+  technicalDirection: 'LONG' | 'SHORT',
+): number {
+  const baseBonus = PATTERN_WEIGHTS[pattern.pattern] ?? 0
+  if (baseBonus === 0) return 0
+
+  if (pattern.bias === 'NEUTRAL') {
+    // Neutral patterns like Doji give partial credit regardless of direction
+    return Math.round(baseBonus * 0.5)
+  }
+
+  const patternIsLong  = pattern.bias === 'BULLISH'
+  const techIsLong     = technicalDirection === 'LONG'
+
+  if (patternIsLong === techIsLong) {
+    // Pattern confirms technical direction — full bonus
+    return baseBonus
+  } else {
+    // Pattern contradicts technical direction — small penalty
+    return OPPOSING_PENALTY
+  }
+}

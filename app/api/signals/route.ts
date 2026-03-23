@@ -2,6 +2,8 @@
 import { NextResponse } from 'next/server'
 import { prisma }       from '@/lib/db'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const limit  = Math.min(parseInt(searchParams.get('limit') ?? '20'), 100)
@@ -15,7 +17,7 @@ export async function GET(req: Request) {
       id: true, symbol: true, direction: true, confidence: true,
       entryLow: true, entryHigh: true, tp1: true, tp2: true, tp3: true,
       sl: true, rrRatio: true,
-      technical: true, fundamental: true, sentiment: true,
+      technical: true, fundamental: true, openInterest: true,
       reasons: true, status: true, createdAt: true,
     },
   })

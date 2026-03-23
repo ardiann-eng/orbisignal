@@ -89,8 +89,8 @@ async function buildCoinMapping(): Promise<Record<string, CoinFundamentalData>> 
 
   let mapping: Record<string, CoinFundamentalData> = {}
 
-  // Fetch top 500 coins by market cap (5 pages x 100 per page)
-  for (let page = 1; page <= 5; page++) {
+  // Fetch top 1000 coins by market cap (10 pages x 100 per page)
+  for (let page = 1; page <= 10; page++) {
     // FIX: Added &price_change_percentage=7d for fundamental metrics
     const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=${page}&sparkline=false&price_change_percentage=7d`
 
@@ -131,8 +131,8 @@ async function buildCoinMapping(): Promise<Record<string, CoinFundamentalData>> 
       }
     }
 
-    // FIX: 3s delay between pages (free tier = 30 req/min)
-    await sleep(3000)
+    // FIX: 5s delay between pages (free tier = 30 req/min)
+    await sleep(5000)
 
     if (!success && Object.keys(mapping).length > 0) {
       // We have partial data — stop fetching more pages but keep what we have

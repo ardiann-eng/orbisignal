@@ -116,40 +116,96 @@ class DataFetcher {
   }
 
   public async get_funding_rate(symbol: string): Promise<number> {
-    // Only fetch perp funding rate; skip spot pairs cleanly // NEW:
-    if (!symbol.includes(':')) { // e.g. "BTC/USDT" → tidak dianggap perp // NEW:
-      return 0 // NEW:
-    } // NEW:
+    // Only fetch perp funding rate; skip spot pairs cleanly
+    if (!symbol.includes(':')) {
+      return 0
+    }
 
     return this.fetchWithRetryAndFallback(
       'get_funding_rate',
       async (exchange) => {
-        try { // NEW:
+        try {
           const funding = await exchange.fetchFundingRate(symbol)
           return funding.fundingRate || 0
-        } catch (err: any) { // NEW:
-          // Jika market tidak ada di exchange (symbol tidak didukung perp), treat sebagai 0 // NEW:
-          const msg = String(err?.message || '') // NEW:
-          if (msg.includes('does not have market symbol')) { // NEW:
-            return 0 // NEW:
-          } // NEW:
-          throw err // NEW:
-        } // NEW:
+        } catch (err: any) {
+          // Jika market tidak ada di exchange (symbol tidak didukung perp), treat sebagai 0
+          const msg = String(err?.message || '')
+          if (msg.includes('does not have market symbol')) {
+            return 0
+          }
+          throw err
+        }
       },
       symbol
     )
   }
 
-  public async get_markets(exchangeId: 'primary' | 'fallback' = 'primary') { // NEW:
+  public async get_open_interest(symbol: string): Promise<number> {
+    const swapSymbol = symbol.includes(':') ? symbol : `${symbol}:USDT`
+
+    return this.fetchWithRetryAndFallback(
+      'get_open_interest',
+      async (exchange) => {
+        try {
+          const oi = await exchange.fetchOpenInterest(swapSymbol)
+          const val = (oi as any).openInterestAmount || (oi as any).openInterest || (oi as any).value || 0
+          logger.debug({ context: 'EXCHANGE', symbol, swapSymbol, val }, '🔍 fetchOpenInterest result')
+          return val
+        } catch (err: any) {
+          const msg = String(err?.message || '')
+          if (msg.includes('does not have market symbol') || msg.includes('not supported')) {
+            return 0
+          }
+          throw err
+        }
+      },
+      symbol
+    )
+  }
+
+  public async get_markets(exchangeId: 'primary' | 'fallback' = 'primary') {
     return exchangeId === 'primary'
-      ? await this.primary.loadMarkets()   // NEW:
-      : await this.fallback.loadMarkets()  // NEW:
+      ? await this.primary.loadMarkets()
+      : await this.fallback.loadMarkets()
   }
 }
 
 const fetcher = new DataFetcher()
 
 // ─── Exported Implementations ─────────────────────────────────────────────
+
+export async function getOpenInterest(symbol: string): Promise<number> {
+  const cacheKey = `oi:${symbol}`
+  const cached = await cache.get<number>(cacheKey)
+  if (cached !== null && cached !== undefined) return cached
+
+  try {
+    const val = await fetcher.get_open_interest(symbol)
+    logger.info({ context: 'EXCHANGE', symbol, oi: val }, '📊 OI Fetch result')
+    await cache.set(cacheKey, val, 300) // 5 min TTL
+    return val
+  } catch (err: any) {
+    logger.error({ context: 'EXCHANGE', symbol, err: err.message }, '❌ getOpenInterest failed')
+    return 0
+  }
+}
+
+export async function getFundingRate(symbol: string): Promise<number> {
+  const swapSymbol = symbol.includes(':') ? symbol : `${symbol}:USDT`
+  const cacheKey = `fr:${swapSymbol}`
+  const cached = await cache.get<number>(cacheKey)
+  if (cached !== null && cached !== undefined) return cached
+
+  try {
+    const val = await fetcher.get_funding_rate(swapSymbol)
+    logger.debug({ context: 'EXCHANGE', symbol, fundingRate: val }, '💰 Funding Rate fetched')
+    await cache.set(cacheKey, val, 300) // 5 min TTL
+    return val
+  } catch (err: any) {
+    logger.warn({ context: 'EXCHANGE', symbol, err: err.message }, '⚠️ getFundingRate failed — returning 0')
+    return 0
+  }
+}
 
 export async function getCandles(
   symbol: string,
@@ -209,15 +265,6 @@ export async function getTicker(symbol: string): Promise<Ticker | null> {
   }
 }
 
-export async function getFundingRate(symbol: string): Promise<number | null> {
-  try {
-    return await fetcher.get_funding_rate(symbol)
-  } catch (err: any) {
-    logger.error({ context: 'EXCHANGE', symbol, err: err.message }, '❌ getFundingRate failed')
-    return null
-  }
-}
-
 export async function getBTCHourlyChange(): Promise<number> {
   const btc1h = await getCandles('BTC/USDT', '1h', 2)
   if (btc1h.length < 2) return 0
@@ -247,23 +294,36 @@ export async function getCoinMeta(symbol: string): Promise<CoinMeta | null> {
   const cached = await cache.get<CoinMeta>(cacheKey)
   if (cached) return cached
 
-  try {
-    const { data } = await axios.get(
-      `${config.COINGECKO_BASE_URL}/coins/${geckoId}`,
-      { params: { localization: false, tickers: false, community_data: false }, timeout: 8000 },
-    )
+  // FIX: Robust retry logic for CoinGecko (similar to CCXT)
+  for (let i = 0; i < 3; i++) {
+    try {
+      const { data } = await axios.get(
+        `${config.COINGECKO_BASE_URL}/coins/${geckoId}`,
+        { 
+          params: { localization: false, tickers: false, community_data: false }, 
+          timeout: i === 0 ? 8000 : 15000 // give more time on retries
+        },
+      )
 
-    const meta: CoinMeta = {
-      symbol,
-      marketCapRank: data.market_cap_rank,
-      marketCap: data.market_data.market_cap.usd,
+      const meta: CoinMeta = {
+        symbol,
+        marketCapRank: data.market_cap_rank,
+        marketCap: data.market_data.market_cap.usd,
+      }
+
+      await cache.set(cacheKey, meta, 3600)
+      return meta
+    } catch (err: any) {
+      if (i === 2) {
+        logger.error({ context: 'GECKO', symbol, err: err.message }, '❌ getCoinMeta failed after 3 attempts')
+        return null
+      }
+      const waitTime = Math.pow(2, i) * 1000
+      logger.warn({ context: 'GECKO', symbol, attempt: i + 1, waitTime }, `⚠️ CoinGecko call failed, retrying...`)
+      await sleep(waitTime)
     }
-
-    await cache.set(cacheKey, meta, 3600)
-    return meta
-  } catch {
-    return null
   }
+  return null
 }
 
 export async function getAllTickers(symbols: readonly string[]): Promise<Ticker[]> {
@@ -277,9 +337,15 @@ export async function getAllTickers(symbols: readonly string[]): Promise<Ticker[
 
 export async function getExchangeSymbols(limit = 100): Promise<string[]> {
   const cacheKey = 'exchange:symbols'
+  
+  // FIX: Aggressive Cache hit check
   const cached = await cache.get<string[]>(cacheKey)
-  if (cached && cached.length > 0) return cached
+  if (cached && Array.isArray(cached) && cached.length > 0) {
+    logger.info({ context: 'CACHE', type: 'EXCHANGE_SYMBOLS', count: cached.length }, '📦 Symbols loaded from cache')
+    return cached.slice(0, limit)
+  }
 
+  logger.info({ context: 'EXCHANGE' }, '⚙️ Rebuilding symbol list (cache miss/expired)...')
   const fallbackSymbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"]
 
   try {
@@ -296,6 +362,7 @@ export async function getExchangeSymbols(limit = 100): Promise<string[]> {
     }
 
     // Ambil ticker untuk semua pair dan sort berdasarkan quoteVolume (24h)
+    // Gunakan concurrency limit sederhana jika perlu, tapi Promise.allSettled + local ticker cache cukup aman.
     const tickerResults = await Promise.allSettled(
       usdtSpotSymbols.map(s => getTicker(s))
     )
@@ -305,17 +372,18 @@ export async function getExchangeSymbols(limit = 100): Promise<string[]> {
       .map(r => r.value as Ticker)
       .sort((a, b) => (b.quoteVolume || 0) - (a.quoteVolume || 0))
 
-    const topSymbols = sortedByVolume
-      .slice(0, limit)
-      .map(t => t.symbol)
+    const topSymbols = sortedByVolume.map(t => t.symbol)
 
     if (!topSymbols || topSymbols.length === 0) {
       logger.warn('Ticker fetch produced no symbols, using fallback list')
       return fallbackSymbols
     }
 
+    // Simpan seluruh hasil (bukan cuma limit) agar cache lebih reusable
     await cache.set(cacheKey, topSymbols, 86400) // Cache for 1 day
-    return topSymbols
+    logger.info({ context: 'CACHE', count: topSymbols.length }, '✅ Symbol list cached successfully')
+    
+    return topSymbols.slice(0, limit)
   } catch (err: any) {
     logger.error({ context: 'EXCHANGE', err: err.message }, '❌ getExchangeSymbols failed')
     return fallbackSymbols

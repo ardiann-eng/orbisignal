@@ -6,6 +6,8 @@ import { NextResponse }    from 'next/server'
 import { getAllTickers, getExchangeSymbols }   from '@/services/marketData' // NEW:
 import { cache }           from '@/utils/cache'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   const cacheKey = 'api:watchlist'
   const cached   = await cache.get(cacheKey)

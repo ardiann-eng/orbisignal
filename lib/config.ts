@@ -5,20 +5,21 @@
 import { z } from 'zod'
 
 const envSchema = z.object({
-  TELEGRAM_BOT_TOKEN:          z.string().min(10),
-  TELEGRAM_CHAT_ID:            z.string(),
-  BINANCE_BASE_URL:            z.string().url().default('https://api.mexc.com'),
-  COINGECKO_BASE_URL:          z.string().url().default('https://api.coingecko.com/api/v3'),
+  TELEGRAM_BOT_TOKEN: z.string().min(10),
+  TELEGRAM_CHAT_ID: z.string(),
+  BINANCE_BASE_URL: z.string().url().default('https://api.mexc.com'),
+  COINGECKO_BASE_URL: z.string().url().default('https://api.coingecko.com/api/v3'),
   // CRYPTOPANIC_API_KEY:      z.string().default(''), // REMOVED:
-  LUNARCRUSH_API_KEY:          z.string().default(''),
-  REDIS_URL:                   z.string().default('redis://localhost:6379'),
-  DATABASE_URL:                z.string().default('file:./cryptosense.db'),
-  MIN_CONFIDENCE:              z.coerce.number().min(0).max(100).default(62), // AUDIT FIX: 62 requires solid multi-pillar score
-  COOLDOWN_HOURS:              z.coerce.number().default(4),
-  SCAN_INTERVAL_MINUTES:       z.coerce.number().default(5),
-  FUNDAMENTAL_INTERVAL_MINUTES:z.coerce.number().default(15),
-  MAX_SL_PCT:                  z.coerce.number().default(8),
-  MIN_RR_RATIO:                z.coerce.number().default(2),
+  LUNARCRUSH_API_KEY: z.string().default(''),
+  UPSTASH_REDIS_REST_URL: z.string().url().default('https://localhost:8080'),
+  UPSTASH_REDIS_REST_TOKEN: z.string().default(''),
+  DATABASE_URL: z.string().default('file:./cryptosense.db'),
+  MIN_CONFIDENCE: z.coerce.number().min(0).max(100).default(50),
+  COOLDOWN_HOURS: z.coerce.number().default(4),
+  SCAN_INTERVAL_MINUTES: z.coerce.number().default(5),
+  FUNDAMENTAL_INTERVAL_MINUTES: z.coerce.number().default(15),
+  MAX_SL_PCT: z.coerce.number().default(8),
+  MIN_RR_RATIO: z.coerce.number().default(2.0), // AUDIT FIX: 2.0 too strict for TP1
 })
 
 function loadConfig() {
@@ -46,12 +47,17 @@ export const TIER_B_SYMBOLS = [
 
 export type Symbol = typeof TIER_B_SYMBOLS[number] | typeof TIER_A_SYMBOLS[number]
 
-// ─── Scoring Weights (must sum to 100) ────────────────────────────────────
+// ─── Scoring Weights ──────────────────────────────────────────────────────
+// Total max raw = 110 → confidence = raw/110 * 100
 export const SCORE_WEIGHTS = {
-  technical:   40,
-  fundamental: 40,
-  sentiment:   20,
+  technical:     40,
+  structure:     10,
+  pattern:       10,
+  fundamental:   30,
+  openInterest:  20,
 } as const
+
+export const MAX_RAW_SCORE = SCORE_WEIGHTS.technical + SCORE_WEIGHTS.structure + SCORE_WEIGHTS.pattern + SCORE_WEIGHTS.fundamental + SCORE_WEIGHTS.openInterest // 110
 
 // ─── Timeframes used for multi-timeframe confirmation ─────────────────────
 // '4h' is the trend direction gate; '1h' is the entry timing gate
@@ -66,10 +72,12 @@ export const TECHNICAL_THRESHOLDS = {
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
+  minPoints: 7,              // AUDIT FIX: 8 was slightly too high for early trends
+  leadRequired: 1,           // AUDIT FIX: 2 was too strict for fast movers
 }
 
 // ─── BTC circuit-breaker ──────────────────────────────────────────────────
 // If BTC drops more than this % in 1h, all LONG alerts are suppressed
-export const BTC_DROP_THRESHOLD_PCT = 2.5 // AUDIT FIX: dari 5% → 2.5% agar lebih protektif
+export const BTC_DROP_THRESHOLD_PCT = 3.5 // Adjusted from 2.5 -> 3.5
 // Partial circuit breaker: BTC drop > this → require higher confidence
 export const BTC_WEAK_THRESHOLD_PCT = 1.5  // AUDIT FIX: jika BTC -1.5%/1h, butuh confidence >= 70

@@ -4,6 +4,8 @@ import { cache }        from '@/utils/cache'
 import { runFullScan }  from '@/services/scanner'
 import { getBot }       from '@/telegram/alertSender'
 
+export const dynamic = 'force-dynamic'
+
 // GET — return last scan summary (used by dashboard polling)
 export async function GET() {
   const lastRun = await cache.get('scanner:lastRun')

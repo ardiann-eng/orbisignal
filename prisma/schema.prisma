@@ -16,7 +16,7 @@ model Signal {
   confidence  Int
   technical   Int
   fundamental Int
-  sentiment   Int
+  openInterest Int      // REPLACED: sentiment
   reasons     String   // JSON string array
   entryLow    Float
   entryHigh   Float
@@ -25,8 +25,8 @@ model Signal {
   tp3         Float
   sl          Float
   rrRatio     Float
-  fearGreed   Int
-  marketMood  String
+  oiValue     Float    // REPLACED: fearGreed
+  oiChange    Float    // REPLACED: marketMood
   status      String   @default("ACTIVE") // "ACTIVE" | "TP1_HIT" | ...
   createdAt   DateTime @default(now())
   resolvedAt  DateTime?

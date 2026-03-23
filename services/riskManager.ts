@@ -27,7 +27,7 @@ export interface RiskPlan {
 // ─── ATR (Average True Range) ─────────────────────────────────────────────
 // ATR measures current volatility — used to dynamically size buffers.
 
-function calcATR(candles: { high: number; low: number; close: number }[], period = 14): number {
+export function calcATR(candles: { high: number; low: number; close: number }[], period = 14): number {
   if (candles.length < period + 1) return 0
 
   const trueRanges: number[] = []
@@ -123,13 +123,13 @@ export async function buildRiskPlan(
   let tp1: number, tp2: number, tp3: number
 
   if (direction === 'SHORT') {
-    tp1 = entryMid - (riskDistance * 1.5) // R:R 1:1.5
-    tp2 = entryMid - (riskDistance * 2.5) // R:R 1:2.5
-    tp3 = entryMid - (riskDistance * 4.0) // R:R 1:4.0
+    tp1 = entryMid - (riskDistance * 2.2) // Increased from 1.5 to safely exceed 2.0
+    tp2 = entryMid - (riskDistance * 3.5) // Increased from 2.5
+    tp3 = entryMid - (riskDistance * 5.5) // Increased from 4.0
   } else {
-    tp1 = entryMid + (riskDistance * 1.5)
-    tp2 = entryMid + (riskDistance * 2.5)
-    tp3 = entryMid + (riskDistance * 4.0)
+    tp1 = entryMid + (riskDistance * 2.2)
+    tp2 = entryMid + (riskDistance * 3.5)
+    tp3 = entryMid + (riskDistance * 5.5)
   }
 
   // AUDIT FIX: Gunakan config.MIN_RR_RATIO (default 2.0), bukan hardcode 1.2

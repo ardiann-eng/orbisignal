@@ -129,11 +129,11 @@ npm run dev
 
 | Variable | Default | Keterangan |
 |---|---|---|
-| `MIN_CONFIDENCE` | 65 | Minimum score untuk kirim alert |
+| `MIN_CONFIDENCE` | 50 | Minimum score untuk kirim alert |
 | `COOLDOWN_HOURS` | 4 | Jeda antar alert per coin |
 | `SCAN_INTERVAL_MINUTES` | 5 | Frekuensi scan teknikal |
 | `MAX_SL_PCT` | 8 | Maksimum SL % dari entry |
-| `MIN_RR_RATIO` | 2 | Minimum Risk:Reward ratio |
+| `MIN_RR_RATIO` | 1.5 | Minimum Risk:Reward ratio |
 
 ---
 
@@ -152,15 +152,15 @@ npm run dev
 
 ### ✅ Sudah Konkret (production-ready logic)
 - Technical engine: RSI, MACD, EMA stack, volume spike, S/R detection
+- **Pattern Engine**: 24+ chart patterns dengan logika konfirmasi transparan
+- **Professional Charting**: Terminal UI (Lightweight Charts) dengan Candlestick, EMA, MACD, RSI, & Volume panels
 - Multi-timeframe confirmation (4H gate + 1H timing)
-- Signal scoring: 40/40/20 weighted system
-- Filter pipeline: 4 filter berlapis termasuk BTC circuit-breaker
+- Signal scoring: 40/40/20 weighted system (No-Fallback Honesty)
+- Filter pipeline: Entry Quality Filter (ATR-based), Volume Ratio filter, BTC circuit-breaker
 - Risk manager: ATR-based entry zone, Fibonacci TP1/2/3, dynamic SL
-- Telegram formatter: MarkdownV2, inline keyboard, command handlers
-- Signal persistence: Prisma + SQLite → mudah migrate ke PostgreSQL
-- Cooldown system: Redis-backed dengan in-memory fallback
-- Signal tracker: TP/SL hit detection untuk performa tracking
-- Dashboard: signal history table dengan auto-refresh
+- Telegram formatter: MarkdownV2, AI Pattern visibility, command handlers
+- Signal persistence: Prisma + PostgreSQL (Railway ready)
+- Dashboard: Signal history + Interactive Live Terminal Chart
 
 ### ⚠️ Partial / Placeholder
 - **Fundamental engine**: News scoring via CryptoPanic ✅, Whale tracker butuh setup listener terpisah

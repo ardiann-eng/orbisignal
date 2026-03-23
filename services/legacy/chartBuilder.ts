@@ -18,114 +18,110 @@ export async function generateChart(signal: Signal): Promise<Buffer | null> {
       return null
     }
 
-    // Build labels and OHLC data for a line chart (QuickChart doesn't support candlestick natively)
-    const labels = candles.map(c => {
-      const d = new Date(c.openTime)
-      return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:00`
-    })
-    const closes = candles.map(c => c.close)
-    const highs  = candles.map(c => c.high)
-    const lows   = candles.map(c => c.low)
+    // Build OHLC data for candlestick chart
+    const candlestickData = candles.map(c => ({
+      x: c.openTime,
+      o: c.open,
+      h: c.high,
+      l: c.low,
+      c: c.close
+    }))
 
     const { entryLow, entryHigh, tp1, tp2, tp3, stopLoss } = signal.riskPlan
     const entryMid = (entryLow + entryHigh) / 2
 
     // Build horizontal annotation lines for TP/SL/Entry
-    const makeAnnotation = (value: number, color: string, label: string) => ({
+    const makeAnnotation = (value: number, color: string, label: string, isEntry = false) => ({
       type: 'line',
       mode: 'horizontal',
       scaleID: 'y',
       value,
       borderColor: color,
-      borderWidth: 2,
-      borderDash: [5, 5],
+      borderWidth: isEntry ? 3 : 2,
+      borderDash: isEntry ? [] : [4, 4],
       label: {
         enabled: true,
         content: `${label}: ${formatPrice(value)}`,
-        backgroundColor: color,
-        font: { size: 10 },
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        color: color,
+        font: { size: 11, weight: 'bold' },
         position: 'end',
+        xAdjust: -10,
       },
     })
 
     const chartConfig = {
-      type: 'line',
+      type: 'candlestick',
       data: {
-        labels,
-        datasets: [
-          {
-            label: 'Close',
-            data: closes,
-            borderColor: signal.direction === 'LONG' ? '#00ff88' : '#ff3366',
-            borderWidth: 2,
-            pointRadius: 0,
-            fill: false,
+        datasets: [{
+          label: signal.symbol,
+          data: candlestickData,
+          color: {
+            up: '#26a69a',    // TV Bullish Green
+            down: '#ef5350',  // TV Bearish Red
+            unchanged: '#999',
           },
-          {
-            label: 'High',
-            data: highs,
-            borderColor: 'rgba(255,255,255,0.15)',
-            borderWidth: 1,
-            pointRadius: 0,
-            fill: false,
+          borderColor: {
+            up: '#26a69a',
+            down: '#ef5350',
           },
-          {
-            label: 'Low',
-            data: lows,
-            borderColor: 'rgba(255,255,255,0.15)',
-            borderWidth: 1,
-            pointRadius: 0,
-            fill: '-1', // fill between high and low
-            backgroundColor: 'rgba(255,255,255,0.03)',
-          },
-        ],
+          wickColor: {
+            up: '#26a69a',
+            down: '#ef5350',
+          }
+        }]
       },
       options: {
+        responsive: false,
+        devicePixelRatio: 2, // High DPI for clarity
         plugins: {
+          legend: { display: false },
           title: {
             display: true,
-            text: `ORBIS ${signal.direction} — ${signal.symbol} (Score: ${signal.confidence}/100)`,
-            color: '#ffffff',
-            font: { size: 18 },
+            text: `ORBIS Inteligência — ${signal.symbol} (${signal.direction})`,
+            color: '#d1d4dc',
+            font: { size: 20, weight: 'bold' }
           },
-          legend: { display: false },
           annotation: {
-            annotations: [
-              makeAnnotation(entryMid, '#eab308', 'Entry'),
-              makeAnnotation(tp1, '#22c55e', 'TP1'),
-              makeAnnotation(tp2, '#22c55e', 'TP2'),
-              makeAnnotation(tp3, '#16a34a', 'TP3'),
-              makeAnnotation(stopLoss, '#ef4444', 'SL'),
-            ],
-          },
+            annotations: {
+              entry: makeAnnotation(entryMid, '#f0b90b', 'ENTRY', true),
+              tp1:   makeAnnotation(tp1, '#00ff88', 'TP1'),
+              tp2:   makeAnnotation(tp2, '#00ff88', 'TP2'),
+              tp3:   makeAnnotation(tp3, '#00ff88', 'TP3'),
+              sl:    makeAnnotation(stopLoss, '#ff3366', 'SL'),
+            }
+          }
         },
         scales: {
           x: {
-            ticks: { color: '#888', maxTicksLimit: 10, font: { size: 9 } },
-            grid: { color: '#333' },
+            type: 'time',
+            time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
+            grid: { color: '#1f222d', drawBorder: false },
+            ticks: { color: '#787b86', font: { size: 10 } }
           },
           y: {
             position: 'right',
-            ticks: { color: '#888', font: { size: 10 } },
-            grid: { color: '#333' },
-          },
-        },
-      },
+            grid: { color: '#1f222d', drawBorder: false },
+            ticks: { color: '#d1d4dc', font: { size: 11 } }
+          }
+        }
+      }
     }
 
-    // POST to QuickChart API
+    // POST to QuickChart API with version 3 (enables financial plugins)
     const response = await axios.post(
       QUICKCHART_URL,
       {
         chart: JSON.stringify(chartConfig),
-        width: 1280,
-        height: 720,
-        backgroundColor: '#1a1a2e',
+        width: 1000,
+        height: 600,
+        backgroundColor: '#131722', // TV Dark Background
         format: 'png',
+        version: '3'
       },
       {
         responseType: 'arraybuffer',
-        timeout: 15000,
+        timeout: 20000,
       },
     )
 

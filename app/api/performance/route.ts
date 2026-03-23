@@ -2,6 +2,8 @@
 import { NextResponse }         from 'next/server'
 import { getPerformanceReport } from '@/utils/performance'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const days = parseInt(searchParams.get('days') ?? '30')

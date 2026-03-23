@@ -4,8 +4,19 @@
 
 import { getCandles, type Candle } from '@/services/marketData'
 import { TECHNICAL_THRESHOLDS, TIMEFRAMES } from '@/lib/config'
+import { logger } from '@/utils/logger'
 
 // ─── Types ────────────────────────────────────────────────────────────────
+
+export interface MarketStructureResult {
+  bos:          'BULLISH' | 'BEARISH' | 'NONE'  // Break of Structure
+  higherLow:    boolean                           // last swing low > prev swing low
+  lowerHigh:    boolean                           // last swing high < prev swing high
+  breakout:     boolean                           // close above last swing high (bullish)
+  breakdown:    boolean                           // close below last swing low (bearish)
+  supportReject:boolean                           // rejection wick near swing low
+  resistReject: boolean                           // rejection wick near swing high
+}
 
 export interface TechnicalResult {
   timeframe: string
@@ -17,11 +28,13 @@ export interface TechnicalResult {
   ema21:     number
   ema50:     number
   currentPrice: number
+  priceChange:  number         // 1-hour change for OI confirmation
   volumeRatio:  number         // current volume / 20-period avg
   nearSupport:  boolean
   nearResistance: boolean
   supportLevel: number
   resistanceLevel: number
+  marketStructure: MarketStructureResult
 }
 
 export interface TechnicalScore {
@@ -114,6 +127,96 @@ function calcSupportResistance(
   }
 }
 
+/**
+ * Detects market structure signals using simple swing high/low logic.
+ * Uses a lookback window of `swingWindow` candles to identify swing points.
+ * Pure function — no external calls.
+ */
+function detectMarketStructure(
+  candles: Candle[],
+  swingWindow = 5,
+): MarketStructureResult {
+  const result: MarketStructureResult = {
+    bos: 'NONE',
+    higherLow: false,
+    lowerHigh: false,
+    breakout: false,
+    breakdown: false,
+    supportReject: false,
+    resistReject: false,
+  }
+
+  if (candles.length < swingWindow * 3 + 5) return result
+
+  // ── Find recent swing highs and lows ──────────────────────────
+  // Swing High: candle whose high is higher than swingWindow candles on each side
+  // Swing Low:  candle whose low is lower than swingWindow candles on each side
+  const swingHighs: number[] = []
+  const swingLows:  number[] = []
+
+  // Search the last 60 candles (skip last 2 — they are forming)
+  const searchSlice = candles.slice(-60, -2)
+  for (let i = swingWindow; i < searchSlice.length - swingWindow; i++) {
+    const hi = searchSlice[i].high
+    const lo = searchSlice[i].low
+
+    let isSwingHigh = true
+    let isSwingLow  = true
+    for (let j = i - swingWindow; j <= i + swingWindow; j++) {
+      if (j === i) continue
+      if (searchSlice[j].high >= hi) isSwingHigh = false
+      if (searchSlice[j].low  <= lo) isSwingLow  = false
+    }
+    if (isSwingHigh) swingHighs.push(hi)
+    if (isSwingLow)  swingLows.push(lo)
+  }
+
+  if (swingHighs.length < 2 || swingLows.length < 2) return result
+
+  const lastSwingHigh = swingHighs[swingHighs.length - 1]
+  const prevSwingHigh = swingHighs[swingHighs.length - 2]
+  const lastSwingLow  = swingLows[swingLows.length - 1]
+  const prevSwingLow  = swingLows[swingLows.length - 2]
+
+  const lastCandle  = candles[candles.length - 1]
+  const lastClose   = lastCandle.close
+  const lastLow     = lastCandle.low
+  const lastHigh    = lastCandle.high
+  const body        = Math.abs(lastCandle.close - lastCandle.open)
+  const lowerWick   = Math.min(lastCandle.open, lastCandle.close) - lastLow
+  const upperWick   = lastHigh - Math.max(lastCandle.open, lastCandle.close)
+
+  // ── BOS: Break of Structure ───────────────────────────────────
+  // Bullish BOS: last close is above previous swing high
+  if (lastClose > lastSwingHigh) {
+    result.bos = 'BULLISH'
+  }
+  // Bearish BOS: last close is below previous swing low
+  else if (lastClose < lastSwingLow) {
+    result.bos = 'BEARISH'
+  }
+
+  // ── Higher Low / Lower High ───────────────────────────────────
+  result.higherLow = lastSwingLow > prevSwingLow
+  result.lowerHigh = lastSwingHigh < prevSwingHigh
+
+  // ── Breakout: close above last swing high ─────────────────────
+  result.breakout  = lastClose > lastSwingHigh
+
+  // ── Breakdown: close below last swing low ─────────────────────
+  result.breakdown = lastClose < lastSwingLow
+
+  // ── Support Rejection: near swing low + large lower wick ──────
+  const nearLow    = Math.abs(lastLow - lastSwingLow) / (lastSwingLow || 1) < 0.015
+  result.supportReject = nearLow && body > 0 && lowerWick >= body * 1.5
+
+  // ── Resistance Rejection: near swing high + large upper wick ──
+  const nearHigh   = Math.abs(lastHigh - lastSwingHigh) / (lastSwingHigh || 1) < 0.015
+  result.resistReject = nearHigh && body > 0 && upperWick >= body * 1.5
+
+  return result
+}
+
 function avgVolume(candles: Candle[], period: number): number {
   const slice = candles.slice(-period - 1, -1) // exclude last candle (current)
   if (!slice.length) return 0
@@ -131,6 +234,8 @@ async function analyzeTimeframe(
 
   const closes   = candles.map(c => c.close)
   const lastClose = closes[closes.length - 1]
+  const prevClose = closes[closes.length - 2] // candles are 1h or 4h
+  const priceChange = ((lastClose - prevClose) / prevClose) * 100
 
   const rsi    = calcRSI(closes)
   const { macd, signal: macdSig, histogram } = calcMACD(
@@ -153,6 +258,8 @@ async function analyzeTimeframe(
   const avgVol       = avgVolume(candles, TECHNICAL_THRESHOLDS.volumeAvgPeriod)
   const volumeRatio  = avgVol > 0 ? currentVol / avgVol : 1
 
+  const marketStructure = detectMarketStructure(candles)
+
   return {
     timeframe,
     rsi,
@@ -163,11 +270,13 @@ async function analyzeTimeframe(
     ema21,
     ema50,
     currentPrice:   lastClose,
+    priceChange,
     volumeRatio,
     nearSupport:    support > 0 && Math.abs(lastClose - support) / lastClose < 0.03,
     nearResistance: resistance > 0 && Math.abs(lastClose - resistance) / lastClose < 0.03,
     supportLevel:   support,
     resistanceLevel:resistance,
+    marketStructure,
   }
 }
 
@@ -255,18 +364,7 @@ export async function runTechnicalEngine(symbol: string): Promise<TechnicalScore
     bearPoints += 5
   }
 
-  // ── Volume spike scoring (max 5 points) ─────────────────────
-  const { volumeSpike } = TECHNICAL_THRESHOLDS
-  if (tf1h.volumeRatio > volumeSpike * 1.5) {
-    const pts = 5
-    bullPoints += pts; bearPoints += pts // volume amplifies either direction
-    reasons.push(`Volume spike ${tf1h.volumeRatio.toFixed(1)}× average`)
-  } else if (tf1h.volumeRatio > volumeSpike) {
-    bullPoints += 3; bearPoints += 3
-    reasons.push(`Elevated volume ${tf1h.volumeRatio.toFixed(1)}× average`)
-  }
-
-  // ── Support/Resistance scoring (max 5 points) ────────────────
+  // ─── Support/Resistance scoring (max 5 points) ────────────────
   if (tf4h.nearSupport) {
     bullPoints += 5
     reasons.push(`Price near key support ($${tf4h.supportLevel.toFixed(2)})`)
@@ -276,15 +374,76 @@ export async function runTechnicalEngine(symbol: string): Promise<TechnicalScore
     reasons.push(`Price near key resistance ($${tf4h.resistanceLevel.toFixed(2)})`)
   }
 
+  // ─── Volume spike scoring (max 5 points) ─────────────────────
+  // Volume spike is directional (Bullish if Price UP, Bearish if Price DOWN)
+  const { volumeSpike } = TECHNICAL_THRESHOLDS
+  const isUp = tf1h.priceChange > 0
+
+  if (tf1h.volumeRatio > volumeSpike) {
+    const pts = tf1h.volumeRatio > volumeSpike * 1.5 ? 5 : 3
+    if (isUp) {
+      bullPoints += pts
+      reasons.push(`Bullish volume spike ${tf1h.volumeRatio.toFixed(1)}× avg`)
+    } else {
+      bearPoints += pts
+      reasons.push(`Bearish volume spike ${tf1h.volumeRatio.toFixed(1)}× avg`)
+    }
+  }
+
+  // ─── Market Structure scoring (max ±8 points) ─────────────────
+  // Uses 4H candle data — already fetched above. No extra API calls.
+  const ms = tf4h.marketStructure
+  const bullish_ms = ms.bos === 'BULLISH' || ms.higherLow || ms.breakout || ms.supportReject
+  const bearish_ms = ms.bos === 'BEARISH' || ms.lowerHigh || ms.breakdown || ms.resistReject
+
+  if (bullish_ms && !bearish_ms) {
+    bullPoints += 8
+    const signals = [
+      ms.bos === 'BULLISH' ? 'BOS Bullish' : '',
+      ms.higherLow         ? 'Higher Low'  : '',
+      ms.breakout          ? 'Breakout'    : '',
+      ms.supportReject     ? 'Support Rejection' : '',
+    ].filter(Boolean).join(', ')
+    reasons.push(`Market Structure Bullish: ${signals}`)
+  } else if (bearish_ms && !bullish_ms) {
+    bearPoints += 8
+    const signals = [
+      ms.bos === 'BEARISH' ? 'BOS Bearish' : '',
+      ms.lowerHigh         ? 'Lower High'  : '',
+      ms.breakdown         ? 'Breakdown'   : '',
+      ms.resistReject      ? 'Resistance Rejection' : '',
+    ].filter(Boolean).join(', ')
+    reasons.push(`Market Structure Bearish: ${signals}`)
+  } else if (bullish_ms && bearish_ms) {
+    // Mixed signals — no bonus, but note it internally
+    logger.debug({ context: 'TECH_ANA', symbol }, '⚖️ Market Structure mixed signals — no bonus applied')
+  }
+  // Penalty: if momentum direction is set but market structure counters it
+  // We apply this AFTER direction is resolved in next block, so we track for later.
+  const msContradictsLong  = bullPoints > bearPoints && bearish_ms && !bullish_ms
+  const msContradictsShort = bearPoints > bullPoints && bullish_ms && !bearish_ms
+  if (msContradictsLong) {
+    bullPoints = Math.max(0, bullPoints - 5)
+    reasons.push('⚠️ Market Structure contradicts LONG momentum (−5 pts)')
+  } else if (msContradictsShort) {
+    bearPoints = Math.max(0, bearPoints - 5)
+    reasons.push('⚠️ Market Structure contradicts SHORT momentum (−5 pts)')
+  }
+
+  logger.debug({ context: 'TECH_ANA', symbol, bullPoints, bearPoints }, '🔍 Technical points breakdown')
+
   // ── Resolve direction and normalize score ────────────────────
   const maxRaw = 40
   let direction: 'LONG' | 'SHORT' | 'NEUTRAL' = 'NEUTRAL'
   let rawScore = 0
 
-  if (bullPoints > bearPoints && bullPoints > 8) {
+  // FIX: Break stalemates — allow a small lead (leadRequired) to resolve direction
+  const { minPoints, leadRequired } = TECHNICAL_THRESHOLDS
+  
+  if (bullPoints > bearPoints + leadRequired && bullPoints > minPoints) {
     direction = 'LONG'
     rawScore  = bullPoints
-  } else if (bearPoints > bullPoints && bearPoints > 8) {
+  } else if (bearPoints > bullPoints + leadRequired && bearPoints > minPoints) {
     direction = 'SHORT'
     rawScore  = bearPoints
   }

@@ -1,0 +1,110 @@
+# Engineering Audit Report: Orbisignal Trading Bot
+
+Laporan ini merinci audit teknis terhadap pipeline generasi sinyal, logika scoring, dan sistem validasi bot trading Anda.
+
+## 1. Arsitektur Analisis (Layering)
+
+Bot menggunakan sistem analisis berlapis (**Multi-Layer Analysis**) yang dibagi menjadi 6 tahap utama:
+
+1.  **Discovery Layer**: Memilih 250 koin teratas berdasarkan `quoteVolume` (24 jam) di exchange.
+2.  **Technical Layer**: Penentu arah utama (`LONG`/`SHORT`/`NEUTRAL`) menggunakan indikator momentum dan tren.
+3.  **Pattern Layer**: Deteksi chart pattern untuk memberikan konfirmasi visual dan skor tambahan.
+4.  **Fundamental & Derivative Layer**: Evaluasi kesehatan aset (CoinGecko) dan aktivitas pasar berjangka (Open Interest).
+5.  **Filtering Layer**: Filter pengaman (BTC crash, Sideways, Cooldown, **Volume Ratio < 0.5**, **Entry Quality Filter**).
+6.  **Risk Management Layer**: Perhitungan matematis target profit (TP), stop loss (SL), dan rasio Risk/Reward (R:R).
+
+---
+
+## 2. Technical Analysis Engine
+
+**Logika Utama**: Bot menghitung `bullPoints` dan `bearPoints`. Arah ditentukan oleh pemenang poin dengan selisih (`lead`) tertentu.
+
+### Indikator yang Digunakan:
+*   **MACD (12, 26, 9)**: Mendeteksi crossover 1H/4H.
+*   **RSI (14)**: Mendeteksi kondisi Overbought (>70) atau Oversold (<30).
+*   **EMA (9, 21, 50)**: Digunakan untuk konfirmasi tren. EMA9 > EMA50 adalah Bullish.
+*   **Volume Spike**: Mendeteksi lonjakan volume mendadak > 1.5x rata-rata 20 candle terakhir.
+*   **ATR (14)**: Digunakan khusus untuk menentukan jarak Stop Loss agar tidak terkena noise.
+
+### Status Indikator:
+| Indikator | Peran | Pengaruh |
+| :--- | :--- | :--- |
+| **Technical Direction** | **Wajib Lolos** | **Sangat Tinggi (40 Poin)** |
+| **EMA Spread** | Filter (Wajib) | Memblokir jika market sideways |
+| **Volume Spike** | Tambahan Skor | Sedang (Bonus poin) |
+| **RSI / MACD** | Tambahan Skor | Komponen pembentuk Technical Score |
+
+---
+
+## 3. Fundamental Analysis Layer
+
+**Bobot Maksimal**: 40 Poin.
+
+Bot mengambil data dari **CoinGecko** secara dinamis:
+*   **Rank Coin**: Memberikan skor lebih tinggi untuk koin top-cap (Rank 1-50: +7 hingga +10 poin).
+*   **Volume/MarketCap Ratio**: Mengukur likuiditas. Ratio > 15% memberikan skor maksimal.
+*   **7d Price Change**: Konfirmasi tren mingguan. Jika arah trade searah dengan tren 7 hari, poin bertambah.
+*   **ATH Drawdown**: Mendeteksi "Deep Value" (LONG jika drop -80% dari ATH) atau "Short Ripe" (SHORT jika dekat ATH).
+
+> [!IMPORTANT]
+> **No-Fallback Policy**: Jika data CoinGecko tidak tersedia, bot sekarang memberikan **0 Poin**. Hal ini dilakukan untuk menjaga kejujuran sinyal dan tidak memberi keuntungan curang bagi koin tidak dikenal.
+
+---
+
+## 4. Sentiment & Derivatives (Open Interest)
+
+**Bobot Maksimal**: 20 Poin.
+
+Bot saat ini **HANYA** menggunakan **Open Interest (OI)** sebagai indikator sentimen/derivatif utama.
+*   **OI Correlation**: Bot membandingkan perubahan harga 1 jam terakhir dengan perubahan OI.
+    *   *Price ↑ + OI ↑* = Konfirmasi Bullish Kuat (Skor 20).
+    *   *Price ↓ + OI ↑* = Tekanan Bearish Kuat (Skor 20).
+*   **Indikator yang Belum Digunakan (Formalitas/Placeholder)**: Funding Rate, Long/Short Ratio, BTC Dominance, dan Fear & Greed saat ini dibaca atau ada di config namun **tidak mempengaruhi scoring final** di logic [signalEngine.ts](file:///d:/cryptosense/services/signalEngine.ts).
+
+---
+
+## 5. Pattern Detection Engine
+
+Bot mendeteksi **18 jenis pattern** (Engulfing, Pinbar, Hammer, Tweezer, dll).
+
+*   **Pengaruh Poin**: Pattern memberikan **Bonus +5 Poin** jika arah pattern sesuai dengan arah Technical.
+*   **Logika Transparan**: Telegram alert sekarang menampilkan Nama Pattern dan Alasan (Logic) kenapa pattern tersebut valid.
+*   **Cakupan**: Mendeteksi **24+ jenis pattern** (Engulfing, Pinbar, Hammer, Morning Star, Three White Soldiers, dll).
+
+---
+
+## 6. Urutan Keputusan (Decision Pipeline)
+
+Satu koin harus melewati "corong" berikut:
+
+1.  **Scanner**: Ambil 250 koin volume tertinggi.
+2.  **Technical Engine**: Cek momentum 1H/4H. Jika status `NEUTRAL`, langsung **DITOLAK**.
+3.  **Fundamental & OI**: Hitung skor fundamental dan korelasi OI.
+4.  **Multi-Pillar Gate**: Minimal 2 dari 3 pilar (Tech, Fund, OI) harus kontribusi skor.
+    *   *Pengecualian*: Jika Technical sangat kuat (>35), boleh 1 pilar saja.
+5.  **Safety Filters**:
+    *   Cek **Cooldown** (apakah koin ini baru saja dikirim?).
+    *   Cek **BTC Circuit Breaker** (jika BTC drop >2.5%, dilarang LONG).
+    *   Cek **Sideways Filter** (EMA9 vs EMA50 spread < 1.5% = Tolak).
+6.  **Confidence Check**: Total skor harus >= **50** (Revisi terbaru dari 45).
+7.  **Risk Manager**: Hitung SL/TP. Jika R:R **< 1.5**, sinyal **DITOLAK**.
+8.  **Output**: Kirim sinyal ke Telegram + **Interactive Chart Terminal Dashboard**.
+
+---
+
+## 7. Bottleneck Utama (Penyebab Sinyal Sedikit)
+
+Sebelum audit ini, sinyal sangat sedikit karena:
+1.  **Threshold Terlalu Tinggi (52)**: Sinyal teknis yang bagus seringkali hanya mencapai skor 40-45.
+2.  **Fundamental "Hukuman"**: Koin yang tidak ada di CoinGecko diberi skor 0, sehingga mustahil mencapai threshold.
+3.  **Multi-Pillar Gate**: Syarat awal 20% kontribusi di pilar OI/Fund terlalu berat untuk koin yang baru mulai bergerak.
+4.  **Min R:R 2.0**: Banyak peluang trade yang bagus hanya memiliki R:R 1.5 - 1.8, yang sebelumnya diblokir.
+
+---
+
+## 8. File & Function Utama
+
+*   **Final Decision Maker**: [services/signalEngine.ts](file:///d:/cryptosense/services/signalEngine.ts) → function [buildSignal()](file:///d:/cryptosense/services/signalEngine.ts#136-221)
+*   **Scoring Logic**: [services/signalEngine.ts](file:///d:/cryptosense/services/signalEngine.ts) → function [combineScores()](file:///d:/cryptosense/services/signalEngine.ts#107-133)
+*   **Filter Logic**: [services/signalEngine.ts](file:///d:/cryptosense/services/signalEngine.ts) → function [passesAllFilters()](file:///d:/cryptosense/services/signalEngine.ts#49-104)
+*   **Risk Engine**: [services/riskManager.ts](file:///d:/cryptosense/services/riskManager.ts) → function [buildRiskPlan()](file:///d:/cryptosense/services/riskManager.ts#52-177)
