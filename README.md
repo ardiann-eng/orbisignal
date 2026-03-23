@@ -12,21 +12,20 @@ Market Data (Binance + CoinGecko)
   Data Normalizer & Redis Cache
         ↓
   ┌─────────────┬──────────────┬────────────┐
-  │  Technical  │ Fundamental  │ Sentiment  │
-  │  Engine     │ Engine       │ Engine     │
-  │  (40 pts)   │ (40 pts)     │ (20 pts)   │
+  │  Technical  │ Fundamental  │ Sentiment/OI │
+  │  (50 pts + P) │ (30 pts)     │ (20 pts)     │
   └──────┬──────┴──────┬───────┴──────┬─────┘
          └─────────────┼──────────────┘
                        ↓
               Signal Scoring Engine
-              (confidence 0–100)
+              (confidence = raw/110 * 100)
                        ↓
               Filter Pipeline
-              · Min confidence ≥ 65
-              · Multi-pilar gate (2/3 harus aktif)
+              · Min confidence ≥ 50 (adaptive 42-47)
+              · Multi-pillar gate (min 2/4)
               · Cooldown 4 jam per coin
-              · BTC circuit-breaker
-              · R:R validation (min 1:2)
+              · BTC circuit-breaker (3.5% drop)
+              · R:R validation (min 1:2.0)
                        ↓
          ┌─────────────┴─────────────┐
          │    Risk Manager           │
@@ -133,7 +132,7 @@ npm run dev
 | `COOLDOWN_HOURS` | 4 | Jeda antar alert per coin |
 | `SCAN_INTERVAL_MINUTES` | 5 | Frekuensi scan teknikal |
 | `MAX_SL_PCT` | 8 | Maksimum SL % dari entry |
-| `MIN_RR_RATIO` | 1.5 | Minimum Risk:Reward ratio |
+| `MIN_RR_RATIO` | 2.0 | Minimum Risk:Reward ratio |
 
 ---
 
@@ -155,12 +154,10 @@ npm run dev
 - **Pattern Engine**: 24+ chart patterns dengan logika konfirmasi transparan
 - **Professional Charting**: Terminal UI (Lightweight Charts) dengan Candlestick, EMA, MACD, RSI, & Volume panels
 - Multi-timeframe confirmation (4H gate + 1H timing)
-- Signal scoring: 40/40/20 weighted system (No-Fallback Honesty)
-- Filter pipeline: Entry Quality Filter (ATR-based), Volume Ratio filter, BTC circuit-breaker
-- Risk manager: ATR-based entry zone, Fibonacci TP1/2/3, dynamic SL
-- Telegram formatter: MarkdownV2, AI Pattern visibility, command handlers
-- Signal persistence: Prisma + PostgreSQL (Railway ready)
-- Dashboard: Signal history + Interactive Live Terminal Chart
+- **Signal Scoring Engine**: 40 (Tech) + 10 (Structure) + 10 (Pattern) + 30 (Fund) + 20 (OI) = **110 Max Raw Score**.
+- **No-Fallback Honesty**: Koin tanpa data CoinGecko mendapat **0 Poin** fundamental.
+- **BTC Circuit Breaker**: Proteksi otomatis jika BTC drop > **3.5%** / jam.
+- **Volume Filter**: Minimal volume ratio **0.5** (volume 1h vs avg 20d).
 
 ### ⚠️ Partial / Placeholder
 - **Fundamental engine**: News scoring via CryptoPanic ✅, Whale tracker butuh setup listener terpisah

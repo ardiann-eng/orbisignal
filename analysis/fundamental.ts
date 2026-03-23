@@ -162,8 +162,7 @@ export async function runFundamentalEngine(
     
     let cgMetrics: { points: number; reasons: string[] };
     if (!cgData) {
-      // AUDIT FIX: Don't penalize mid-cap/unmapped coins with 0. Give neutral 15 points.
-      cgMetrics = { points: 15, reasons: ['No fundamental data (mid-cap/unmapped) — using neutral base score'] }
+      cgMetrics = { points: 0, reasons: ['No fundamental data (coin not mapped on CoinGecko) — 0 points'] }
     } else {
       cgMetrics = calculateFundamentalScore(cgData, direction)
     }

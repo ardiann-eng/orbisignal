@@ -38,7 +38,7 @@ Bot menggunakan sistem analisis berlapis (**Multi-Layer Analysis**) yang dibagi 
 
 ## 3. Fundamental Analysis Layer
 
-**Bobot Maksimal**: 40 Poin.
+**Bobot Maksimal**: 30 Poin (Fundamental) + 10 Poin (Pattern) + 10 Poin (Structure).
 
 Bot mengambil data dari **CoinGecko** secara dinamis:
 *   **Rank Coin**: Memberikan skor lebih tinggi untuk koin top-cap (Rank 1-50: +7 hingga +10 poin).
@@ -84,10 +84,12 @@ Satu koin harus melewati "corong" berikut:
     *   *Pengecualian*: Jika Technical sangat kuat (>35), boleh 1 pilar saja.
 5.  **Safety Filters**:
     *   Cek **Cooldown** (apakah koin ini baru saja dikirim?).
-    *   Cek **BTC Circuit Breaker** (jika BTC drop >2.5%, dilarang LONG).
+    *   Cek **BTC Circuit Breaker** (jika BTC drop > **3.5%**, dilarang LONG).
+    *   Cek **BTC Weakness** (jika BTC drop > **1.5%**, butuh Confidence >= 70).
     *   Cek **Sideways Filter** (EMA9 vs EMA50 spread < 1.5% = Tolak).
-6.  **Confidence Check**: Total skor harus >= **50** (Revisi terbaru dari 45).
-7.  **Risk Manager**: Hitung SL/TP. Jika R:R **< 1.5**, sinyal **DITOLAK**.
+6.  **Confidence Check**: Total skor harus >= **50** (Minimum Threshold).
+    *   *Adaptive Threshold*: Bot menggunakan ambang batas dinamis **42-47** tergantung kekuatan Technical Score.
+7.  **Risk Manager**: Hitung SL/TP. Jika R:R **< 2.0** (Target TP1), sinyal **DITOLAK**.
 8.  **Output**: Kirim sinyal ke Telegram + **Interactive Chart Terminal Dashboard**.
 
 ---
