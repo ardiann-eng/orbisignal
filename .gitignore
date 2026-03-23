@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.local
+.next
+*.db
+coinmap.json
+tmp/
+archive/
+tests/
+data/
+.cursor/
+project_files.txt

@@ -1,0 +1,54 @@
+{
+  "name": "cryptosense-bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "concurrently \"next start\" \"npm run start:scanner\"",
+    "start:scanner": "tsx services/scanner.ts",
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "db:generate": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.15.0",
+    "@upstash/redis": "^1.37.0",
+    "axios": "^1.7.0",
+    "canvas": "^3.2.2",
+    "ccxt": "^4.5.44",
+    "chart.js": "^4.5.1",
+    "chartjs-node-canvas": "^5.0.0",
+    "chartjs-plugin-annotation": "^3.1.0",
+    "concurrently": "^8.2.2",
+    "dayjs": "^1.11.11",
+    "next": "^14.2.35",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "pino": "^9.3.0",
+    "pino-pretty": "^11.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "technicalindicators": "^3.1.0",
+    "tsx": "^4.16.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/node-cron": "^3.0.11",
+    "@types/node-telegram-bot-api": "^0.64.7",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "prisma": "^5.15.0",
+    "typescript": "^5"
+  },
+  "nixpacks": {
+    "aptPkgs": [
+      "libcairo2-dev",
+      "libpango1.0-dev",
+      "libjpeg-dev",
+      "libgif-dev",
+      "librsvg2-dev"
+    ]
+  }
+}

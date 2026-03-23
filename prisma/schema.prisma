@@ -1,0 +1,94 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Signal {
+  id          Int      @id @default(autoincrement())
+  symbol      String
+  direction   String
+  confidence  Int
+  technical   Int
+  fundamental Int
+  sentiment   Int
+  reasons     String   // JSON string array
+  entryLow    Float
+  entryHigh   Float
+  tp1         Float
+  tp2         Float
+  tp3         Float
+  sl          Float
+  rrRatio     Float
+  fearGreed   Int
+  marketMood  String
+  status      String   @default("ACTIVE") // "ACTIVE" | "TP1_HIT" | ...
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  // AUDIT FIX: TP/SL tracking fields
+  tp1Hit      Boolean  @default(false)
+  tp2Hit      Boolean  @default(false)
+  tp3Hit      Boolean  @default(false)
+  slHit       Boolean  @default(false)
+  tp1Pct      Float    @default(0)
+  tp2Pct      Float    @default(0)
+  tp3Pct      Float    @default(0)
+  slPct       Float    @default(0)
+  closed      Boolean  @default(false)
+  closeReason String?
+  closedAt    DateTime?
+
+  deliveries  SignalDelivery[]
+}
+
+model Subscriber {
+  id         Int      @id @default(autoincrement())
+  chatId     String   @unique
+  username   String?
+  isActive   Boolean  @default(true)
+  joinedAt   DateTime @default(now())
+}
+
+model SignalDelivery {
+  id         Int      @id @default(autoincrement())
+  signalId   Int
+  chatId     String
+  messageId  Int
+
+  signal     Signal   @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  
+  @@unique([chatId, messageId])
+}
+
+model MarketSnapshot {
+  id        String   @id @default(cuid())
+  symbol    String
+  timeframe String
+  openPrice Float
+  highPrice Float
+  lowPrice  Float
+  closePrice Float
+  volume    Float
+  rsi       Float?
+  macd      Float?
+  macdSignal Float?
+  ema9      Float?
+  ema21     Float?
+  ema50     Float?
+  capturedAt DateTime @default(now())
+
+  @@index([symbol, timeframe, capturedAt])
+}
+
+model FearGreedSnapshot {
+  id        String   @id @default(cuid())
+  value     Int
+  label     String
+  capturedAt DateTime @default(now())
+}
