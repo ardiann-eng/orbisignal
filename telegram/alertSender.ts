@@ -8,14 +8,14 @@ import { formatAlert, formatDetailAnalysis } from '@/telegram/formatter' // FIX:
 import { prisma }  from '@/lib/db'
 import { logger }  from '@/utils/logger'
 import type { Signal } from '@/services/signalEngine'
-import { generateChart } from '@/archive/chartBuilder'
+import { generateChart } from '@/services/legacy/chartBuilder'
 import { getCoinMappingStats } from '@/utils/coinMapping' // FIX: for /coinstats command
 import fs from 'fs/promises'
 
 // @ts-ignore - JS modules
-import { addActiveSignal, startMonitor } from '@/archive/tracker'
+import { addActiveSignal, startMonitor } from '@/services/legacy/tracker'
 // @ts-ignore - JS modules
-import { initScheduler as startRecapScheduler } from '@/archive/recap'
+import { initScheduler as startRecapScheduler } from '@/services/legacy/recap'
 
 // ─── Bot singleton ────────────────────────────────────────────────────────
 

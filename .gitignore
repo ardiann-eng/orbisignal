@@ -5,7 +5,6 @@ node_modules
 *.db
 coinmap.json
 tmp/
-archive/
 tests/
 data/
 .cursor/
